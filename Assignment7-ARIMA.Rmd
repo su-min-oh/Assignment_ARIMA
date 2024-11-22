@@ -1,0 +1,135 @@
+---
+title: "Assignment7-ARIMA"
+author: "Sumin Oh"
+date: "2024-11-21"
+output: html_document
+---
+
+#### 1. Perform ARIMA on your time series. Explain the output.
+```{r}
+library(readr)
+library(forecast)
+library(fpp2)
+
+# Import the data
+sales = read.csv("https://raw.github.com/su-min-oh/Assignment_ARIMA/main/time%20series%20data.csv")
+
+# Make the data time series
+salests = ts(sales$ProductP2, frequency = 12)
+
+# Plot the time series data
+plot(salests)
+```
+
+My data is about the sales of 5 products and corresponding temperature. Since I did regression of Product 2 and Temperature on the last assignment, I chose Product 2 to be a time series for this ARIMA assignment. Sales is showing upward trend, with some ups and downs.
+
+```{r}
+decompose(salests)
+plot(decompose(salests))
+```
+
+I chose to conduct decomposition of my time series. It seems that there is a seasonality. 
+
+```{r}
+ndiffs(salests)
+tsdisplay(salests)
+```
+
+By using ndifss(), it turned out that my data needs 1 differencing to be stationary. Tsdisplay() shows that for ACF, there are strong correlations between values in the initial stage. PACF shows that only 2 lags exceeds the confidence interval. So I assume that the p of the arima will be limited to 2.
+
+```{r}
+salestsdiff1 = diff(salests,differences = 1)
+tsdisplay(salestsdiff1)
+```
+
+After doing 1 differencing, I re-plotted the data. ACF shows that the autocorrelation of the values were eliminated. PACF shows that there still are some lags exceeds the interval, it became more stable.
+
+```{r}
+autofit <- auto.arima(salests, trace=TRUE, stepwise = FALSE)
+autofit
+```
+
+It turned out that the best model is ARIMA(2,1,2). This means that Auto Regressive(p)=2, Differencing(d)= 1, and Moving Average(q)=2.
+- p=2 : Indicates that the current value of the data is described by the values from two past points in time. 
+- d=1 : As mentioned above, the data needs 1 diffencing to be stationary.
+- q=2 : The current value of the data is explained by the error of the past two points in time.
+
+
+
+#### 2. Run Residual Analysis
+```{r}
+#1. ACF
+Acf(autofit$residuals)
+
+#2. Box test
+Box.test(residuals(autofit), lag=20, type="Ljung")
+
+#3. Residuals vs. Fitted
+ggplot(data=data.frame(autofit$fitted,autofit$residuals),aes(x=autofit$fitted, y=autofit$residuals)) + geom_point(col="blue") + geom_hline(yintercept = 0)
+
+#4. Histogram
+hist(autofit$residuals)
+
+#5. QQ plot
+ggplot(autofit$residuals,aes(sample=autofit$residuals)) + stat_qq(color="blue") + stat_qq_line()
+```
+
+- 1. ACF : It looks fine with no significant signals.
+- 2. Box.text : The p value is 0.2208. It's much larger than 0.05, meaning that the residual is random.
+- 3. Plot of residuals vs. fitted : Residuals seem to be located randomly. However, residuals are quite big, indicating that this model couldn't explain the data very accurately. 
+- 4. Histogram of residuals : Residuals are quite normally distributed. But there is a tail on the right side.
+- 5. QQ plot : So I did an additional analysis. Most of the residuals are located near the diagonal line, except for the ones at the upper-right side.
+
+
+
+#### 3. Perform and Plot the forecast for the next five periods
+```{r}
+arima_fc = forecast(autofit,h=5,level=c(99.5))
+plot(arima_fc)
+```
+
+
+
+#### 4. Show the accuracy of your ARIMA model
+```{r}
+accuracy(autofit)
+summary(salests)
+```
+
+MASE is less than 1, so this model performs better than Naive model. By looking at the summary of the data, the Max value is 331 while Min is 42. RMSE is around 28, and considering the mean of the data, it can be considered small. MAPE is 13.9% and it's in the acceptable range.
+
+So I concluded that ARIMA performed quite accurately.
+
+But just out of curiousity, I wanted to compare with other models that we learned in class.
+
+#### Extra : other forecasts methods
+```{r}
+#Average
+avg = meanf(salests,h=5)
+
+#Moving Average
+MA3 = ma(salests,order = 3)
+MA3_fc = forecast(MA3, h=5)
+
+#Simple Smoothing
+SES = HoltWinters(salests,beta=FALSE,gamma=FALSE)
+SES_fc = forecast(SES, h=5)
+
+#Holt Winters
+HW = hw(salests,h=5)
+
+#Plot the accuracy measures
+
+a = accuracy(avg)
+b = accuracy(MA3_fc)
+c = accuracy(SES_fc)
+d = accuracy(HW)
+e = accuracy(autofit)
+
+accuracymeasure = rbind(a,b,c,d,e)
+rownames(accuracymeasure) = c('avg','MA','SES','HW','ARIMA')
+
+accuracymeasure
+```
+
+I expected ARIMA model to be the most accurate measure. However, by checking the accuracy measure, Moving Average turned out to be the most accurate one, which was surprising. I concluded that my dataset is not complicated enough for the ARIMA to perform the best, and that is why Moving Average, compartively simple method, performed the best with this data.
